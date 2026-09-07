@@ -1,0 +1,55 @@
+name: Windows build and smoke tests
+
+on:
+  push:
+    branches: [main, "codex/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test-and-build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install test dependencies
+        run: python -m pip install -c requirements.lock -e ".[test,native,build]"
+      - name: Unit tests with coverage
+        run: coverage run --source=fet_analyzer -m unittest discover -s tests -v
+      - name: Enforce coverage floor
+        run: coverage report --fail-under=50
+      - name: Python and dashboard syntax checks
+        shell: pwsh
+        run: |
+          python -m compileall -q fet_analyzer tests
+          if ($LASTEXITCODE -ne 0) { throw "Python syntax check failed" }
+          $Html = Get-Content fet_analyzer/dashboard/static/index.html -Raw
+          $Script = [regex]::Match($Html, '<script>([\s\S]*?)</script>').Groups[1].Value
+          $Temp = Join-Path $env:RUNNER_TEMP dashboard.js
+          Set-Content -LiteralPath $Temp -Value $Script -Encoding UTF8
+          node --check $Temp
+          if ($LASTEXITCODE -ne 0) { throw "Dashboard syntax check failed" }
+          node --check fet_analyzer/dashboard/static/analytics.js
+          if ($LASTEXITCODE -ne 0) { throw "Analytics syntax check failed" }
+          Get-ChildItem scripts -Filter *.ps1 | ForEach-Object {
+            $Tokens = $null; $ParseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$Tokens, [ref]$ParseErrors)
+            if ($ParseErrors) { throw ($ParseErrors | Out-String) }
+          }
+      - name: Build portable distribution
+        shell: pwsh
+        run: ./scripts/build_windows.ps1
+      - name: Verify and archive portable distribution
+        shell: pwsh
+        run: ./scripts/package_windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FET-Analyzer-v2-windows-unsigned
+          path: |
+            dist/FET-Analyzer-v2-windows-portable.zip
+            dist/FET-Analyzer-v2-windows-portable.zip.sha256
+          if-no-files-found: error

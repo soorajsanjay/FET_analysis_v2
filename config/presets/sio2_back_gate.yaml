@@ -1,0 +1,7 @@
+device_defaults:
+  polarity: p
+  temperature_k: 300.0
+  gate_dielectric: SiO2
+  top_gated: false
+  oxide_thickness_nm: 90.0
+  dielectric_constant: 3.9

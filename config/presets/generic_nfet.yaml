@@ -1,0 +1,5 @@
+device_defaults:
+  polarity: n
+  temperature_k: 300.0
+transfer:
+  ioff_leakage_factor: 3.0

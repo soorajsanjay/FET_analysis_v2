@@ -1,0 +1,4 @@
+* text=auto
+*.cmd text eol=crlf
+# Preserve the bundled upstream runtime byte-for-byte.
+fet_analyzer/dashboard/static/plotly-3.7.0.min.js -text -diff

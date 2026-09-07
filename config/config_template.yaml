@@ -1,0 +1,278 @@
+# =============================================================================
+# FET Analyzer — Configuration Template
+# =============================================================================
+# Copy this file and edit to match your lab setup and devices.
+# All paths are relative to the config file location unless absolute.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# A. General Settings
+# ---------------------------------------------------------------------------
+general:
+  # Input/output paths
+  input_folder: "./"               # Folder with measurement files
+  output_folder: "output"          # Created inside input_folder if relative
+  recursive: true                  # Search subdirectories for files
+  overwrite: false                 # Overwrite existing output folders
+
+  # File handling
+  file_priority:                   # Duplicate resolution: first match wins
+    - csv
+    - xlsx
+    - xls
+    - xtr
+    - ztr
+  skip_patterns:                   # Patterns to exclude (regex)
+    - "^~\\$"                      # Temp/office files
+    - "^\\."                       # Hidden files
+    - "_analysis\\.xlsx$"          # Legacy output files
+    - "_report\\.html$"            # Standalone HTML reports
+
+  # Logging
+  log_level: "INFO"                # DEBUG, INFO, WARNING, ERROR
+  processing_log: "processing_log.txt"
+
+  # Unit preferences
+  current_unit: "uA/um"            # Preferred unit for drain current density
+  mobility_unit: "cm2/Vs"          # Preferred mobility unit
+  length_unit: "um"                # Preferred length unit
+  area_unit: "cm2"                 # Preferred area unit
+
+# ---------------------------------------------------------------------------
+# B. Filename Parsing Patterns
+# ---------------------------------------------------------------------------
+# Each pattern uses named regex groups. Active pattern selected below.
+# Common groups: measurement_type, sample_label, sample_details,
+#                device_type, device_name, measurement_count
+#
+# Example filename:
+#   IdVg_gndu_pFET__SnO_Provas_7mtorr_TLM_10um__1
+#   └─meas type──┘  └──sample label──┘└─det─┘└type┘└name┘ └count┘
+
+filename_patterns:
+  active: default_easyexpert
+
+  patterns:
+    default_easyexpert:
+      description: >
+        Expected format:
+        measurementType__sampleLabel_sampleDetails_deviceType_deviceName__measurementCount
+        Double underscores separate the three main blocks.
+      regex: >
+        (?P<measurement_type>[^_]+)__
+        (?P<sample_label>[^_]+)_
+        (?P<sample_details>[^_]+)_
+        (?P<device_type>[^_]+)_
+        (?P<device_name>.+)__
+        (?P<measurement_count>\d+)
+
+    simple:
+      description: >
+        Simpler format: measurementType_sampleLabel_deviceName.extension
+      regex: >
+        (?P<measurement_type>[^_]+)_
+        (?P<sample_label>[^_]+)_
+        (?P<device_name>.+)
+
+# ---------------------------------------------------------------------------
+# C. Device & Material Parameters (Global Defaults)
+# ---------------------------------------------------------------------------
+# These apply to ALL devices unless overridden by per-device parameter files.
+# The pipeline will auto-generate device_params.txt on first run for editing.
+#
+# Cox is auto-computed if not provided:
+#   Cox = epsilon_0 * epsilon_r / tox
+#   epsilon_0 = 8.854187817e-14 F/cm
+#   tox must be in cm internally
+
+device_defaults:
+  channel_width_um: 100.0          # W — channel width in μm
+  channel_length_um: null          # Lch — override if not in filename (null = auto-detect)
+  gate_length_um: null             # Lg — gate length if different from Lch
+  oxide_thickness_nm: 90.0         # tox in nm
+  film_thickness_nm: null          # Semiconductor film thickness; enables rho_film = Rsh * thickness
+  dielectric_constant: 3.9         # εr (3.9 = SiO₂, ~20-25 = HfO₂)
+  cox_f_per_cm2: null              # Direct Cox override (F/cm²). null = auto-compute.
+  contact_length_um: null          # Contact length for TLM
+  contact_width_um: null           # Contact width for TLM
+  gate_dielectric: "SiO2"          # Material label
+  contact_metal: null              # e.g. "Ni/Au", "Ti/Au"
+  substrate: null                  # e.g. "Si/SiO2", "Quartz"
+  top_gated: false                 # true = top gate, false = back gate
+  temperature_c: null              # Measurement temperature
+  temperature_k: 300.0             # Absolute temperature (K); preferred for physical checks
+  polarity: "p"                    # Explicitly set "p" or "n" for each run/sample
+
+# ---------------------------------------------------------------------------
+# D. Transfer Analysis Settings
+# ---------------------------------------------------------------------------
+transfer:
+  # Threshold voltage extraction
+  vth_method: "peak_gm_tangent"    # Options: peak_gm_tangent, constant_current
+  vth_vds_correction: true         # Apply Vds/2 correction to Vg_intercept
+  vds_segmentation_tolerance_v: 1.0e-6 # Max measured Vds spread within one transfer sweep
+  constant_current_value: null     # For constant_current method: Id/W (A/μm)
+
+  # gm / derivative smoothing
+  smooth_method: "savgol"          # Options: savgol, adaptive_savgol, none
+  savgol_window: 0                 # Savitzky-Golay window (0 = no smoothing on gm)
+  savgol_order: 1                  # Savitzky-Golay polynomial order
+  adaptive_gm_min_fraction: 0.05   # Smallest adaptive window fraction; odd ceiling, minimum 5 points
+  adaptive_gm_max_fraction: 0.10   # Hard upper limit; selected window must be strictly below this fraction
+  adaptive_gm_peak_tolerance: 0.05 # Maximum adjacent-window gm peak change
+  adaptive_gm_peak_shift_steps: 1  # Maximum adjacent-window peak movement in median Vg steps
+  adaptive_gm_snr_plateau_tolerance: 0.10 # Maximum adjacent-window SNR change at stability
+  adaptive_gm_stable_transitions: 2       # Normally require three successive stable windows
+
+  # Tangent fitting around peak gm
+  tangent_window_v: 2.0            # ±V around peak-gm point for linear fit (in volts)
+  tangent_min_points: 5            # Minimum points for tangent fit
+
+  # Ion extraction
+  ion_method: "fixed_vg"  # constant Vg/gate-field family; gate field takes precedence. Other choices: maximum_measured, fixed_overdrive, fixed_overdrive_field, max_common_overdrive
+  report_ion_at_fixed_vg: false     # Optionally include fixed-Vg/fixed-gate-field Ion in reports
+  report_ion_at_fixed_overdrive: false # Optionally include fixed-Vov/fixed-overdrive-field Ion; both checkboxes may be enabled
+  ioff_method: "minimum_above_ig"      # Options: minimum_above_ig, minimum_measured
+  ion_overdrive_v: null            # Signed Vov = Vg - Vth for fixed_overdrive; negative for p-FET
+  ion_overdrive_field_mv_cm: null  # Signed oxide field for fixed_overdrive; overrides voltage when set
+                                    # Vov = field(MV/cm) * oxide_thickness(nm) * 0.1
+  ion_fixed_vg_v: null             # Absolute Vg used when ion_method is fixed_vg
+  ion_gate_field_mv_cm: null       # Nominal Vg/tox field for fixed_gate_field; Vg = field * tox * 0.1
+  overdrive_v: null                # Legacy alias for ion_overdrive_v
+  ion_constant_vg_v: null          # Legacy alias for ion_fixed_vg_v
+
+  # Subthreshold swing
+  ss_method: "minimum"             # Only minimum is currently implemented
+  ss_vg_range_v: null              # Vg range for subthreshold detection (null = auto)
+  ss_require_above_gate_leakage: true  # Require measured |Id| > factor x |Ig|
+  ss_leakage_factor: 1.0            # SS eligibility: |Id| > factor x |Ig|
+
+  # Noise floor
+  noise_floor_a: 1e-13             # Minimum current to consider (absolute, in A)
+  ioff_leakage_factor: 3.0         # Ioff requires |Id| > factor × |Ig|
+
+  # Leakage-aware analysis
+  use_leakage_aware: false         # Use Ieff = max(|Id|,|Ig|) instead of Id
+
+  # Current normalization
+  normalize_by_width: true         # Width-normalize drain current quantities
+  abs_current_for_log: true        # Use abs(Id) for log-scale operations
+
+# ---------------------------------------------------------------------------
+# E. TLM Settings
+# ---------------------------------------------------------------------------
+tlm:
+  # Channel length extraction from filename
+  lch_regex: "TLM\\d*_(\\d+\\.?\\d*)\\s*um"   # Extract Lch from device_name
+  lch_unit: "um"                           # Unit of extracted value
+
+  # Resistance extraction
+  low_bias_window_v: 0.1          # ±V window for low-bias R extraction (IV/output TLM)
+  transfer_read_mode: "constant_vg"  # maximum_current, constant_vg, constant_gate_field, constant_overdrive, constant_overdrive_field
+  transfer_read_vds_v: null          # Required when one transfer file has multiple Vds values
+  vds_tolerance_v: 0.001             # Matching tolerance for |Vds| (V)
+  transfer_read_vg_v: null            # Shared Vg (V), used by constant_vg
+  transfer_gate_field_mv_cm: null      # Shared nominal Vg/tox field, used by constant_gate_field
+  transfer_overdrive_v: null          # Shared signed Vg-Vth (V), used by constant_overdrive
+                                      # Use a negative value for p-FETs.
+  transfer_overdrive_field_mv_cm: null # Shared signed (Vg-Vth)/tox field, used by constant_overdrive_field
+  # Rtotal x W versus Lch is fitted by ordinary least squares with a free
+  # intercept. The intercept is required to extract contact resistance.
+  min_channel_lengths: 3          # Minimum Lch values required for TLM fit
+
+  # Grouping keys for multi-file TLM IdVg analysis
+  group_keys:
+    - sample_label
+    - device_type
+    - contact_metal
+    - gate_dielectric
+    - vd_value                    # Groups by Vd used in measurement
+    - overdrive_v                 # Groups by Vov used for Ion extraction
+
+  # SS for Ion vs SS plots
+  tlm_ss_method: "minimum"        # Only minimum is currently implemented
+  tlm_output_vd_max: 0.1          # Maximum |Vd| used for output resistance fitting
+
+  # Physical fit-acceptance gates. Fits are retained with accepted/review/
+  # rejected_nonphysical status and explicit reasons.
+  acceptance_min_length_span_ratio: 2.0
+  acceptance_max_relative_uncertainty: 1.0
+  acceptance_max_leverage: 0.85
+  acceptance_max_residual_curvature: 0.8
+  acceptance_max_lt_to_lmin_ratio: 10.0
+
+# ---------------------------------------------------------------------------
+# F. Plot Settings
+# ---------------------------------------------------------------------------
+plots:
+  dpi: 150
+  figsize: [8, 6]                 # Default figure size in inches
+  font_size: 11
+  font_family: "sans-serif"
+  color_palette: "colorblind"     # matplotlib palette name
+  publication_style: true         # Cleaner, less chartjunk
+  show_grid: true
+  show_annotations: true          # Annotate extracted values on plots
+
+  # Output formats
+  formats:
+    - png                          # Always generate PNG
+    # - svg                        # Uncomment for vector graphics
+    # - pdf                        # Uncomment for PDF
+
+  # Colorblind-friendly palette (10 colors)
+  palette:
+    - "#0072B2"   # Blue
+    - "#E69F00"   # Orange
+    - "#009E73"   # Green
+    - "#F0E442"   # Yellow
+    - "#56B4E9"   # Sky blue
+    - "#D55E00"   # Vermillion
+    - "#CC79A7"   # Reddish purple
+    - "#000000"   # Black
+    - "#999999"   # Grey
+    - "#882255"   # Dark pink
+
+# ---------------------------------------------------------------------------
+# G. Summary Selection
+# ---------------------------------------------------------------------------
+summary:
+  preferred_direction: "forward"
+  preferred_vd_v: 0.1
+  preferred_vd_tolerance_v: 0.001
+  fallback_to_nearest_vd: true
+  fallback_to_reverse: true
+  common_overdrive_group_keys: ["sample_label", "polarity"] # Comparison group for max_common_overdrive
+  export_origin_import: false
+
+# ---------------------------------------------------------------------------
+# H. Advanced / Experimental
+# ---------------------------------------------------------------------------
+advanced:
+  # Smoothing for noisy data
+  pre_smooth: false               # Smooth raw data before analysis
+  pre_smooth_window: 5
+
+  # DIBL extraction
+  dibl_use_forward_only: true     # Only forward sweeps for DIBL
+
+  # Validation thresholds
+  max_mobility_cm2_vs: 1000       # Warn if mobility exceeds this
+  min_subthreshold_slope_mv_dec: 60  # SS below ~60 mV/dec is suspicious (T = 300K)
+  leakage_ratio_warning: 0.1      # Retained diagnostic threshold; coverage check below controls warnings
+  gate_leakage_id_dominance_fraction: 0.90  # Require |Id| > |Ig| for at least 90% of paired points
+  sanity_min_points: 10
+  open_p95_current_a: 1.0e-11     # Possible-open p95 current ceiling (10 pA)
+  open_noise_floor_factor: 10.0
+  short_p10_ua_per_um: 100.0      # Possible-short normalized-current floor
+  short_flatness_ratio: 3.0       # Require p95(|Id|)/p5(|Id|) below this value
+  sanity_sweep_fraction: 0.90
+  tlm_r2_warning: 0.9             # Warn if TLM fit R² below this
+  compliance_cleaning_enabled: false # Opt-in plateau-based compliance clipping
+  parameter_preflight_mode: "warning" # warning, strict (suppress dependent metrics), or error (stop device)
+  allow_ion_sign_mismatch: false       # Permit positive p-FET / negative n-FET Ion field without warning
+  compliance_threshold_pct: 0.005    # Stricter plateau threshold; lower avoids clipping genuine slopes
+
+  # Output behaviour
+  export_intermediate_data: true  # Embed gm, SS, mobility intermediate tables in each input-named workbook
+  export_raw_data_copy: true      # Copy raw data to output folder

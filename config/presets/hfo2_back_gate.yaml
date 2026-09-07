@@ -1,0 +1,7 @@
+device_defaults:
+  polarity: p
+  temperature_k: 300.0
+  gate_dielectric: HfO2
+  top_gated: false
+  oxide_thickness_nm: null
+  dielectric_constant: null
