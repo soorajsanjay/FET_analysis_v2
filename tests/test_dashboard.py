@@ -218,8 +218,8 @@ class DashboardAdapterTests(unittest.TestCase):
             old_revision = state.project_revision
             state.switch_project(selected)
             immediate = state.summary()
-            self.assertEqual(immediate["input_dir"], str(selected.resolve()))
-            self.assertEqual(immediate["output_dir"], str(output.resolve()))
+            self.assertEqual(Path(immediate["input_dir"]).resolve(), selected.resolve())
+            self.assertEqual(Path(immediate["output_dir"]).resolve(), output.resolve())
             self.assertGreater(immediate["project_revision"], old_revision)
             for _ in range(200):
                 if not state.summary()["catalog_loading"]:
@@ -236,8 +236,8 @@ class DashboardAdapterTests(unittest.TestCase):
             selected.mkdir()
             state = DashboardState(root)
             state.switch_project(selected, custom_output)
-            self.assertEqual(state.input_dir, selected.resolve())
-            self.assertEqual(state.output_dir, custom_output.resolve())
+            self.assertEqual(state.input_dir.resolve(), selected.resolve())
+            self.assertEqual(state.output_dir.resolve(), custom_output.resolve())
 
     def test_dashboard_disables_overwrite_explicitly_when_unchecked(self):
         class FakeProcess:
@@ -503,8 +503,8 @@ class DashboardAdapterTests(unittest.TestCase):
             )
             payload = DashboardState(root).results_payload()
             self.assertEqual(payload["rows"][0]["ion_configured_ua_per_um"], 12.5)
-            self.assertEqual(resolve_artifact(output, payload["rows"][0]["report_id"]), report)
-            self.assertEqual(resolve_artifact(output, payload["rows"][0]["workbook_id"]), workbook)
+            self.assertEqual(resolve_artifact(output, payload["rows"][0]["report_id"]), report.resolve())
+            self.assertEqual(resolve_artifact(output, payload["rows"][0]["workbook_id"]), workbook.resolve())
             outside = root / "outside.html"
             outside.write_text("outside", encoding="utf-8")
             identifier = base64.urlsafe_b64encode(b"../outside.html").decode("ascii").rstrip("=")

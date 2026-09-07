@@ -59,7 +59,7 @@ class ReleaseRegressionTests(unittest.TestCase):
             config.write_text("transfer:\n  ion_fixed_vg_v: -1\n")
             with patch("fet_analyzer.cli.discover_files", return_value=([], [])) as discover:
                 self.assertEqual(main(["--input", folder, "--config", str(config), "--dry-run"]), 0)
-            self.assertEqual(discover.call_args.kwargs["excluded_roots"][0], root / "output")
+            self.assertEqual(discover.call_args.kwargs["excluded_roots"][0].resolve(), (root / "output").resolve())
 
     def test_tlm_dry_run_never_calls_continuation(self):
         with tempfile.TemporaryDirectory() as folder:
