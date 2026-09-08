@@ -20,11 +20,21 @@ from fet_analyzer.path_utils import (
 )
 
 def _identity(record: dict[str, Any]) -> tuple[str, str, float] | None:
-    name = record["source_file"].stem
-    match = re.search(r"(TLM\d*)_(\d+(?:\.\d+)?)\s*(?:um|µm|μm)", name, re.I)
-    if not match: return None
-    sample = record["classification"].get("filename_info", {}).get("sample_label", "unknown")
-    return str(sample), match.group(1).upper(), float(match.group(2))
+    classification = record.get("classification", {})
+    if not classification.get("is_tlm"):
+        return None
+    device = record.get("device_params", {})
+    sources = record.get("parameter_sources", {})
+    length = device.get("channel_length_um")
+    # A global/unconfirmed template length cannot identify a particular TLM
+    # structure. Filename, metadata, or a confirmed table row can.
+    if length is None or sources.get("channel_length_um") == "template_default":
+        return None
+    info = classification.get("filename_info", {})
+    facts = classification.get("filename_conventions") or {}
+    sample = info.get("sample_label", "unknown")
+    tlm_id = facts.get("tlm_id") or info.get("tlm_id") or info.get("device_type") or "TLM"
+    return str(sample), str(tlm_id).upper(), float(length)
 
 def _common_film_thickness(records: list[tuple[float, dict[str, Any]]]) -> float | None:
     values = {float(record["device_params"]["film_thickness_nm"])

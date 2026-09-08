@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,16 +48,54 @@ def frozen_distribution_dir() -> Path:
 
 
 def resolve_worker_command() -> list[str]:
-    """Resolve the CLI worker without recursively invoking a frozen GUI."""
+    """Resolve the analysis worker; frozen GUIs relaunch the primary EXE."""
     if not is_frozen():
         return [sys.executable, "-m", "fet_analyzer"]
-    worker = frozen_distribution_dir() / "FET-Analyzer-Worker.exe"
-    if not worker.is_file():
+    primary = frozen_distribution_dir() / "FET-Analyzer-v2.exe"
+    if not primary.is_file():
         raise FileNotFoundError(
-            f"Analysis worker is missing: {worker}. Reinstall the complete portable "
+            f"Primary analysis executable is missing: {primary}. Reinstall the complete portable "
             "FET Analyzer folder; do not move an executable out of that folder by itself."
         )
-    return [str(worker)]
+    return [str(primary), "--worker"]
+
+
+def worker_launch_error(exc: BaseException, command: list[str]) -> str:
+    executable = command[0] if command else "unknown"
+    winerror = getattr(exc, "winerror", None)
+    detail = f"{type(exc).__name__}: {exc}"
+    if winerror is not None:
+        detail += f" (Windows error {winerror})"
+    return (
+        f"Windows could not start the analysis worker at {executable}. {detail}. "
+        "Extract the complete portable ZIP to an approved local folder; if this copy is in "
+        "OneDrive, try an approved folder outside OneDrive. Check the downloaded ZIP or EXE "
+        "Properties for an Unblock option if your organization permits it. If Windows application "
+        "control still blocks execution, send the diagnostic bundle to IT."
+    )
+
+
+def probe_worker(timeout: float = 10.0) -> dict[str, Any]:
+    """Launch a harmless frozen/source worker probe and report the exact outcome."""
+    try:
+        command = ([sys.executable, "-c", "import fet_analyzer; print('worker-ready')"]
+                   if not is_frozen() else [*resolve_worker_command(), "--worker-probe"])
+    except Exception as exc:
+        return {"status": "missing", "command": [], "error": str(exc)}
+    try:
+        completed = subprocess.run(
+            command, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=timeout, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return {"status": "timeout", "command": command, "error": f"Timed out after {exc.timeout} seconds"}
+    except PermissionError as exc:
+        return {"status": "blocked", "command": command, "error": worker_launch_error(exc, command)}
+    except OSError as exc:
+        return {"status": "launch_error", "command": command, "error": worker_launch_error(exc, command)}
+    output = (completed.stdout or completed.stderr or "").strip()
+    return {"status": "responded" if completed.returncode == 0 and "worker-ready" in output else "failed",
+            "command": command, "return_code": completed.returncode, "output": output}
 
 
 def version_payload() -> dict[str, Any]:

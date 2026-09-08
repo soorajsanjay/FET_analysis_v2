@@ -197,12 +197,12 @@ See [DASHBOARD.md](DASHBOARD.md) for dashboard usage and
 
 `scripts/build_windows.ps1` creates one shared portable folder containing:
 
-- `FET-Analyzer-v2.exe` — primary native WebView2 window;
+- `FET-Analyzer-v2.exe` — primary native WebView2 window and internal worker;
 - `FET-Analyzer-Browser.exe` — explicit browser/console fallback;
-- `FET-Analyzer-Worker.exe` — analysis worker used by both GUIs.
+- `FET-Analyzer-Worker.exe` — optional batch CLI convenience entry point.
 
 Keep the complete folder together. Moving only the primary executable will
-leave it without its worker and shared scientific runtime. Run
+leave it without its shared scientific runtime. Run
 `scripts/smoke_windows.ps1` after building. Native startup failures are written
 under `%LOCALAPPDATA%\FET Analyzer\logs` and display a dialog pointing to the
 browser fallback. Use `FET-Analyzer-Worker.exe --doctor --input <folder>` for a

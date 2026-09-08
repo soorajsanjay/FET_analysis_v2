@@ -971,7 +971,7 @@ class ParameterPrecedenceTests(unittest.TestCase):
             {"channel_length_um": 99, "channel_width_um": 25},
         )
         self.assertEqual(values["channel_length_um"], 10)
-        self.assertEqual(sources["channel_length_um"], "filename")
+        self.assertTrue(sources["channel_length_um"].startswith("filename:"))
         self.assertEqual(values["channel_width_um"], 25)
         self.assertTrue(sources["channel_width_um"].startswith("metadata:"))
 

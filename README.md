@@ -12,7 +12,7 @@ Designed and developed by **Sooraj Sanjay** — sooraj.sanjay@gmail.com.
 | What you want | Use |
 |---|---|
 | Windows, no Python installation | Extract the complete portable ZIP; open `FET-Analyzer-v2.exe` or `FET-Analyzer-Browser.exe` |
-| Run from this source repository | Install Python 3.11–3.13, then double-click **`run.cmd`** |
+| Run from this source repository | Install 64-bit Python 3.10 or newer, then double-click **`run.cmd`** |
 | Repeatable batch analysis or automation | `python -m fet_analyzer --input ... --output ... --config ...` |
 | Native window from source | `run.cmd --mode native --root "C:\FET\measurements"` |
 | Review a completed run without running software | Open the output folder's `index.html` |
@@ -36,16 +36,17 @@ More detail: [dashboard guide](DASHBOARD.md), [methods and interpretation](METHO
 
 1. Clone this repository or download and extract its source ZIP to a writable
    folder, for example `C:\FET\FET_analysis_v2`. Do not run inside a ZIP viewer.
-2. Install an approved **64-bit Python 3.11, 3.12 or 3.13** with `pip` and `venv`.
-   Python 3.11 is the CI target. The Windows launcher uses `py -3` when available,
-   otherwise `python`; the interpreter it selects must be in the supported range.
-3. Double-click **`run.cmd`** in the repository root. It creates `.venv`, installs
+2. Install an approved **64-bit Python 3.10 or newer** with `pip` and `venv`.
+   CI tests Python 3.10, 3.11, 3.13 and 3.14. The launcher checks `python` first,
+   then installed `py` launcher versions from 3.14 through 3.10.
+3. Double-click **`run.cmd`** in the repository root. It creates a version-specific
+   environment such as `.venv-py314`, installs
    the application and dependencies, and opens the local browser dashboard.
 4. Keep its console open while working. Stop a running analysis in the dashboard
    before closing the server; `Ctrl+C` stops the console server.
 
 The first launch needs internet or an approved Python package mirror and may take
-several minutes. Later launches reuse `.venv`. A changed dependency specification
+several minutes. Later launches reuse the matching versioned environment. A changed dependency specification
 or `--reinstall` triggers setup again. Source edits are picked up by the editable
 installation. The launcher does not elevate privileges or change execution policy.
 If setup fails, the console stays open with the error.
@@ -60,7 +61,7 @@ If setup fails, the console stays open with the error.
 ```
 
 `run.py --help` describes the launcher. To see the application's help after setup,
-use `.venv\Scripts\python.exe -m fet_analyzer --help`. Relative paths passed to
+use the interpreter path printed by `run.cmd`, followed by `-m fet_analyzer --help`. Relative paths passed to
 `run.cmd`/`run.py` are relative to the repository root; use absolute paths for data.
 The default mode is browser, which does not require WebView2. Native mode installs
 the optional Python host and requires Microsoft Edge WebView2 Runtime on Windows.
@@ -92,9 +93,9 @@ inventory. Use an IT-managed wheelhouse for reproducible offline installation.
 
 Extract the whole distribution to a location IT permits and keep it together:
 
-- `FET-Analyzer-v2.exe`: native application window.
+- `FET-Analyzer-v2.exe`: native application window and its own internal analysis worker.
 - `FET-Analyzer-Browser.exe`: equivalent browser dashboard with console.
-- `FET-Analyzer-Worker.exe`: batch CLI and child worker for both interfaces.
+- `FET-Analyzer-Worker.exe`: optional batch CLI convenience entry point.
 - `_internal/`: bundled Python, libraries and application resources; required.
 
 No separate Python or pip setup is needed. Native mode needs WebView2; browser
@@ -149,7 +150,7 @@ A recorded `Vds` is used directly; otherwise transfer bias is derived from `Vd-V
 This is a measurement parser, not a general importer for arbitrary spreadsheets,
 formatted report workbooks or files containing unit strings in numeric cells.
 
-The default filename convention is:
+The default structured filename convention is:
 
 ```text
 measurementType__sampleLabel_sampleDetails_deviceType_deviceName__measurementCount.ext
@@ -157,10 +158,71 @@ IdVg__SampleA_SnO_TLM1_10um__1.csv
 LTLM__SampleA_SnO_TLM1_25um__1.ztr
 ```
 
-Sample labels should not contain underscores with the default pattern. `TLM1`,
-`TLM2`, etc. identify structures; `10um` identifies channel length. Filename parsing
-is configurable under `filename_patterns`; inspect classification in preflight.
-Material words in a filename do **not** establish dielectric constant or Cox.
+Sample labels should not contain underscores with the default structured pattern.
+Filename parsing is centralized in `fet_analyzer/filename_conventions.py`; project
+exceptions belong in YAML `filename_patterns` or `tlm.lch_regex`. Inspect the
+detected value and source in dashboard preflight before running an analysis.
+
+### Filename geometry and TLM rules
+
+Any case-insensitive occurrence of `TLM` marks a file as a TLM structure. The
+measured columns still determine whether it is a transfer, output, or general-IV
+measurement. `LTLM` selects the ungated LTLM role. `TLM1`, `TLM02`, and similar
+tokens identify the structure; plain `TLM` uses the stable identifier `TLM`.
+
+The clearest complete geometry block is:
+
+```text
+CL<channel-length>_GL<gate-length>_CW<channel-width>
+IdVg_SampleB_TLM1_CL25_GL20_CW100.csv
+```
+
+`CL`, `GL`, and `CW` are in micrometres even without a suffix. Integers, decimals,
+case variants, optional label/value separators, and `um`, `µm`, or `μm` suffixes
+are accepted. For example, `cl25.5_gl20_cw100`, `CL_25_GL_20_CW_100`, and
+`CL25um_GL20µm_CW100μm` are equivalent apart from the first channel length.
+The block supplies geometry for ordinary and TLM devices; it does not create TLM
+membership without `TLM` in the filename.
+
+| Result parameter | Built-in labels | Unit |
+|---|---|---|
+| `channel_length_um` | `CL`, `Lch`, `L`, `channel_length` | µm |
+| `channel_width_um` | `CW`, `Wch`, `W`, `width`, `channel_width` | µm |
+| `gate_length_um` | `GL`, `Lg`, `gate_length` | µm |
+| `oxide_thickness_nm` | `tox`, `oxide`, `oxide_thickness` | nm |
+| `film_thickness_nm` | `tfilm`, `film_thickness`, `semiconductor_thickness` | nm |
+
+Short `L` and `W` labels require filename token boundaries and will not match
+letters inside a sample name. Values must be finite and greater than zero. `CL`
+always means channel length; contact dimensions remain explicit columns in
+`device_parameters.txt`.
+
+For a TLM filename only, one unlabelled micrometre token is a channel-length
+fallback. All of these resolve 25 µm:
+
+```text
+IdVg_SampleB_TLM1_25um.csv
+SampleB_25um_TLM1_IdVg.csv
+sampleb_tlm_25µm.csv
+```
+
+Repeated equal values are deduplicated. Different unlabelled values, such as
+`TLM1_25um_100um`, are ambiguous because the program cannot know which dimension
+is channel length. Add `CL25`, supply a confirmed `device_parameters.txt` value,
+or set `tlm.lch_regex`. Conflicting explicit values such as `CL25_Lch50` are also
+reported rather than guessed. Unlabelled dimensions on non-TLM files are ignored.
+
+Resolution order for channel length is: confirmed parameter-table row, configured
+`tlm.lch_regex`, `CL`, another explicit length label, one unlabelled TLM `um` token,
+metadata, then an allowed default. Other geometry uses confirmed table, filename,
+metadata, then allowed default. An auto-generated `TEMPLATE_UNCONFIRMED` row cannot
+erase explicit filename evidence. TLM fitting will not group a missing or ambiguous
+length using an unconfirmed global template.
+
+To add a stable organization-wide alias, edit the documented
+`PARAMETER_CONVENTIONS` registry in `fet_analyzer/filename_conventions.py` and add
+a parser test. For a project-only naming scheme, edit YAML instead. Material words
+in a filename do **not** establish dielectric constant or Cox.
 
 Duplicate representations are resolved by `general.file_priority` (normally CSV,
 XLSX, XLS, XTR, ZTR); review which file was selected. Convert unsupported XLS files
@@ -184,7 +246,7 @@ review resolved provenance when migrating an older project.
 
 | Parameter | Meaning |
 |---|---|
-| `channel_width_um`, `channel_length_um` | Electrical channel geometry; length can be inferred from the filename |
+| `channel_width_um`, `channel_length_um`, `gate_length_um` | Electrical geometry; explicit labelled values can be inferred from the filename |
 | `oxide_thickness_nm`, `dielectric_constant` | Used for `Cox = epsilon0 * epsilon_r / tox` unless direct Cox is provided |
 | `cox_f_per_cm2` | Direct capacitance per area, in F/cm²; verify magnitude and units |
 | `polarity` | Explicit `p` or `n`; affects signed read conditions and extraction conventions |
@@ -264,8 +326,8 @@ can additionally produce sample-level `TLM/<sample>/MASTER/` aggregates.
 
 ## Command-line reference
 
-Commands below assume an activated environment (or replace `python` with
-`.venv\Scripts\python.exe`). For portable CLI use `FET-Analyzer-Worker.exe` in place
+Commands below assume an activated environment (or replace `python` with the
+version-specific interpreter printed by `run.cmd`). For portable CLI use `FET-Analyzer-Worker.exe` in place
 of `python -m fet_analyzer`.
 
 ```powershell
@@ -343,7 +405,11 @@ independent replication from repeated sweeps of the same device.
 
 | Symptom | Action |
 |---|---|
-| Launcher cannot find Python | Install approved Python 3.11–3.13 or use the portable ZIP; check `python --version` / `py -3 --version` |
+| Launcher cannot find Python | Install approved 64-bit Python 3.10 or newer or use the portable ZIP; `run.cmd` reports the interpreter candidates it checked |
+| `[WinError 5] Access is denied` while starting analysis | Copy and fully extract the ZIP to an approved local folder, try outside OneDrive, inspect file Properties for an organization-permitted Unblock option, export diagnostics, and ask IT about application-control policy |
+| `FET-Analyzer-Worker.exe` appears to do nothing | Open `FET-Analyzer-v2.exe` for the GUI, or run `FET-Analyzer-Worker.exe --help` from a console for batch syntax |
+| TLM detected but channel length is missing | Add `CL<number>`, use one unlabelled `<number>um` token, configure `tlm.lch_regex`, or add a confirmed device-parameter row |
+| TLM channel length is ambiguous | Remove competing unlabelled dimensions or label channel length explicitly, for example `CL25_GL20_CW100` |
 | pip/proxy/certificate error | Use your institution's approved mirror/wheelhouse; do not disable certificate checks |
 | Native window fails | Try browser executable; inspect `%LOCALAPPDATA%\FET Analyzer\logs`; ask IT about WebView2 |
 | Port 8765 is occupied | Stop the old server or use `--port 8766` |

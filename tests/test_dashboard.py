@@ -431,16 +431,33 @@ class DashboardAdapterTests(unittest.TestCase):
             self.assertIn("--config", command)
             self.assertIn(str(state.local_config_path), command)
 
-    def test_frozen_dashboard_resolves_sibling_worker(self):
+    def test_frozen_dashboard_resolves_primary_self_worker(self):
         from fet_analyzer import runtime
         with tempfile.TemporaryDirectory() as tmp, patch.object(runtime, "is_frozen", return_value=True), patch.object(
             runtime, "frozen_distribution_dir", return_value=Path(tmp)
         ):
-            with self.assertRaisesRegex(FileNotFoundError, "worker is missing"):
+            with self.assertRaisesRegex(FileNotFoundError, "executable is missing"):
                 runtime.resolve_worker_command()
-            worker = Path(tmp) / "FET-Analyzer-Worker.exe"
-            worker.touch()
-            self.assertEqual(runtime.resolve_worker_command(), [str(worker)])
+            primary = Path(tmp) / "FET-Analyzer-v2.exe"
+            primary.touch()
+            self.assertEqual(runtime.resolve_worker_command(), [str(primary), "--worker"])
+
+    def test_worker_probe_reports_response_and_access_denial(self):
+        from fet_analyzer import runtime
+        with patch.object(runtime, "is_frozen", return_value=True), patch.object(
+            runtime, "resolve_worker_command", return_value=[r"C:\FET Analyzer\FET-Analyzer-v2.exe", "--worker"]
+        ), patch.object(runtime.subprocess, "run", return_value=runtime.subprocess.CompletedProcess(
+            [], 0, stdout="worker-ready\n", stderr=""
+        )):
+            self.assertEqual(runtime.probe_worker()["status"], "responded")
+        denied = PermissionError(13, "Access is denied")
+        with patch.object(runtime, "is_frozen", return_value=True), patch.object(
+            runtime, "resolve_worker_command", return_value=[r"C:\FET Analyzer\FET-Analyzer-v2.exe", "--worker"]
+        ), patch.object(runtime.subprocess, "run", side_effect=denied):
+            payload = runtime.probe_worker()
+        self.assertEqual(payload["status"], "blocked")
+        self.assertIn("Access is denied", payload["error"])
+        self.assertIn("approved local folder", payload["error"])
 
     def test_preflight_reports_all_blockers_together(self):
         with tempfile.TemporaryDirectory() as tmp:

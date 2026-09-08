@@ -7,7 +7,7 @@ Usage:
     python -m fet_analyzer --dry-run
 """
 
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 __author__ = "Sooraj Sanjay"
 __email__ = "sooraj.sanjay@gmail.com"
 __copyright__ = "Copyright (c) Sooraj Sanjay"

@@ -467,6 +467,7 @@ def main(argv: list[str] | None = None) -> int:
                 parsed["metadata"], parsed["columns"], parsed["data"],
                 filename=fp.name,
                 filename_patterns=config._data.get("filename_patterns"),
+                lch_regex=config.lch_regex,
             )
             classification["source_filename"] = fp.name
             meas_type = classification["type"]
@@ -494,12 +495,36 @@ def main(argv: list[str] | None = None) -> int:
             from fet_analyzer.device_parameters import resolve_device_parameters
             from fet_analyzer.analysis.geometry import infer_geometry
             device_params_path = input_folder / "device_parameters.txt"
-            inferred, inferred_sources = infer_geometry(fp, parsed["metadata"])
+            inferred, inferred_sources = infer_geometry(
+                fp, parsed["metadata"],
+                filename_patterns=config._data.get("filename_patterns"),
+                lch_regex=config.lch_regex,
+            )
             sample_label = classification.get("filename_info", {}).get("sample_label", "unknown")
             device_params, parameter_sources, parameter_warnings = resolve_device_parameters(
                 config.device_defaults, parameter_rows, str(sample_label), fp.name,
                 inferred=inferred, inferred_sources=inferred_sources,
             )
+            filename_audit = classification.get("filename_conventions") or {}
+            convention_errors = list(filename_audit.get("errors") or [])
+            unresolved_errors = [item for item in convention_errors if not str(
+                parameter_sources.get(str(item.get("parameter", "")), "")
+            ).startswith("device_parameters.txt:")]
+            if unresolved_errors:
+                raise ValueError("Filename convention error: " + "; ".join(
+                    str(item.get("message", item)) for item in unresolved_errors))
+            if classification.get("is_tlm") and (
+                device_params.get("channel_length_um") is None or
+                parameter_sources.get("channel_length_um") == "template_default"
+            ):
+                raise ValueError(
+                    "TLM channel length is unresolved. Add CL<number>, one unlabelled <number>um token, "
+                    "a configured tlm.lch_regex, or a confirmed device_parameters.txt value."
+                )
+            parameter_warnings.extend({
+                "code": item.get("code", "filename_convention_warning"), "level": "warning",
+                "message": item.get("message", str(item)),
+            } for item in filename_audit.get("warnings") or [])
             LOGGER.debug("  → Resolved device parameters from %s", device_params_path)
             classification["device_polarity"] = device_params.get(
                 "polarity", config.device_defaults.get("polarity", "p")
@@ -787,17 +812,10 @@ def main(argv: list[str] | None = None) -> int:
                     with open(safe_path(metadata_file), encoding="utf-8") as f:
                         dev_meta = json.load(f)
                     parsed_meta = dev_meta.get("parsed_metadata", {})
-                    fname = Path(dev_meta.get("file", "")).stem if dev_meta.get("file") else ""
-                    lch_match = re.search(config.lch_regex, fname, re.IGNORECASE)
-                    if lch_match:
-                        dev_params_loaded["channel_length_um"] = float(lch_match.group(1))
-                    # Sample ID — strip _TLM_Xum suffix for TLM grouping
                     finfo = dev_meta.get("classification", {}).get("filename_info", {})
-                    raw_sample = finfo.get("sample_label", device_name)
-                    # Remove _TLM{num}_{X}um suffix to unify TLM variants
-                    sample_clean = re.sub(r'_TLM\d*_\d+\.?\d*um.*', '', str(raw_sample),
-                                          flags=re.IGNORECASE)
-                    dev_params_loaded["sample_id"] = sample_clean or raw_sample
+                    facts = dev_meta.get("classification", {}).get("filename_conventions") or {}
+                    dev_params_loaded["sample_id"] = finfo.get("sample_label", device_name)
+                    dev_params_loaded["tlm_id"] = facts.get("tlm_id") or finfo.get("tlm_id") or finfo.get("device_type")
 
                 geometry = dev_metrics.get("device_geometry", {})
                 dev_params_loaded = {**geometry, **dev_params_loaded}
@@ -826,7 +844,7 @@ def main(argv: list[str] | None = None) -> int:
                         "channel_width_um": dev_params_loaded.get("channel_width_um", config.channel_width_um),
                         "film_thickness_nm": dev_params_loaded.get("film_thickness_nm"),
                         "measurement_type": meas_type,
-                        "device_type": finfo.get("device_type"),
+                        "device_type": dev_params_loaded.get("tlm_id"),
                         "contact_metal": dev_params_loaded.get("contact_metal"),
                         "gate_dielectric": dev_params_loaded.get("gate_dielectric"),
                         "vds_v": (rtotal_data.get("read_conditions") or {}).get("transfer_read_vds_v"),

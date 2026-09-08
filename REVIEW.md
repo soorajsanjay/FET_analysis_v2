@@ -1,4 +1,4 @@
-# Release readiness review — 7 September 2026
+# Release readiness review — 8 September 2026
 
 ## Scope and conclusion
 
@@ -10,6 +10,16 @@ of every extraction formula or an Intune certification. The intended delivery is
 a private, clean source repository and an unsigned portable Windows build for pilot use.
 
 ## Issues corrected during this review
+
+- Centralized filename identity and geometry in `fet_analyzer/filename_conventions.py`.
+  Any filename containing TLM is now a TLM role, channel length can be recovered
+  from a unique micrometre token anywhere in that filename, and labelled CL/Lch,
+  GL/Lg and CW/Wch geometry retains explicit provenance and ambiguity errors.
+- The frozen dashboard now relaunches the primary executable in internal worker
+  mode. Diagnostics actively probe the worker route and report Windows launch or
+  application-control failures with actionable paths and error numbers.
+- Source launch now supports Python 3.10 and newer, creates version-specific virtual
+  environments, and uses a tested Python 3.14 dependency branch.
 
 - Binary XLSX was being passed to the CSV text parser. Numeric single-worksheet
   XLSX now uses openpyxl; ambiguous multiple sheets, formulas and legacy XLS fail
@@ -38,16 +48,18 @@ a private, clean source repository and an unsigned portable Windows build for pi
 
 ## Validation
 
-The pre-change suite passed 126 tests. With the new parser, CLI and local-origin
-regressions, the suite passes 133 tests on Windows with Python 3.13.14.
+The pre-change suite passed 126 tests. With the shared filename conventions,
+launcher, diagnostics, CLI and local-origin regressions, the suite passes 152
+tests on Windows with Python 3.13.14.
 The synthetic five-file batch completed with zero reported processing errors and
 created transfer, LTLM, per-file Excel/HTML, batch summaries and the run index.
-The same 133 tests also pass against the clean source export with the constrained
+The same 152 tests also pass against the clean source export with the constrained
 scientific dependency versions. Coverage is 62% (CI floor: 50%). Python compilation,
 PowerShell syntax and both dashboard JavaScript syntax checks passed.
 The root run.cmd bootstrapped a new environment and its doctor mode returned READY.
-The fresh frozen build passed native/browser/worker help, worker doctor/dry-run,
-HTTP startup and dashboard-triggered analysis with exit 0 and required output
+The fresh frozen build passed native/browser/worker help, the primary executable's
+internal-worker doctor path, worker doctor/dry-run, HTTP startup and dashboard-triggered
+analysis from a path containing spaces with exit 0 and required output
 artifacts. The live browser displayed synthetic Sample Overview and TLM Explorer
 results; the ungated fit counts now show four lengths and four points.
 The native WebView2 window itself was not visually inspected on a managed PC.

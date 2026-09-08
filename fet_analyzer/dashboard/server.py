@@ -24,7 +24,8 @@ from .adapters import DatasetRef, ReportCatalog
 from .results_api import resolve_artifact, sample_results_payload, tlm_results_payload
 from fet_analyzer.config import DEFAULT_CONFIG, deep_merge, load_config
 from fet_analyzer.runtime import (
-    application_data_dir, resolve_worker_command, version_payload, write_diagnostic_bundle,
+    application_data_dir, probe_worker, resolve_worker_command, version_payload,
+    worker_launch_error, write_diagnostic_bundle,
 )
 from fet_analyzer.path_utils import (
     output_path_warning, prepare_write_path, safe_copyfile, safe_path,
@@ -391,8 +392,8 @@ class DashboardState:
         selected_config = config_path or (str(self.local_config_path) if self.local_config_path.exists() else None)
         config = load_config(selected_config)
         from fet_analyzer.file_discovery import discover_files
-        from fet_analyzer.analysis.classifier import parse_filename_groups
         from fet_analyzer.analysis.geometry import infer_geometry
+        from fet_analyzer.filename_conventions import parse_filename_conventions
         from fet_analyzer.analysis.ion_bias import resolve_ion_bias
         from fet_analyzer.device_parameters import load_master_table, resolve_device_parameters
         files, _ = discover_files(
@@ -406,15 +407,40 @@ class DashboardState:
         method = str(config._data.get("transfer", {}).get("ion_method", "maximum_measured"))
         rows = []
         for path in files:
-            info = parse_filename_groups(path.name, config._data.get("filename_patterns", {}))
+            facts = parse_filename_conventions(
+                path.name,
+                configured_filename_patterns=config._data.get("filename_patterns"),
+                configured_lch_regex=config.lch_regex,
+            )
+            info = facts.filename_info()
             sample = str(info.get("sample_label", "unknown"))
-            inferred, inferred_sources = infer_geometry(path, {})
+            inferred, inferred_sources = infer_geometry(
+                path, {}, filename_patterns=config._data.get("filename_patterns"),
+                lch_regex=config.lch_regex,
+            )
             values, sources, parameter_warnings = resolve_device_parameters(
                 config.device_defaults, parameter_rows, sample, path.name,
                 inferred=inferred, inferred_sources=inferred_sources,
             )
             resolved = resolve_ion_bias(config._data, values)
             status, reasons = "Ready", []
+            filename_messages = [item.get("message", str(item)) for item in facts.errors]
+            filename_messages += [item.get("message", str(item)) for item in facts.warnings]
+            unresolved_filename_errors = [item for item in facts.errors if not str(
+                sources.get(str(item.get("parameter", "")), "")
+            ).startswith("device_parameters.txt:")]
+            if unresolved_filename_errors:
+                status = "Blocked"
+                reasons.extend(item.get("message", str(item)) for item in unresolved_filename_errors)
+            elif filename_messages:
+                status = "Review"
+                reasons.extend(filename_messages)
+            if facts.is_tlm and (
+                values.get("channel_length_um") is None or
+                sources.get("channel_length_um") == "template_default"
+            ):
+                status = "Blocked"
+                reasons.append("TLM channel length is unresolved; add CL<number>, one <number>um token, tlm.lch_regex, or a confirmed parameter-table value")
             if parameter_warnings:
                 status = "Review"
                 reasons.extend(str(item.get("message", item)) for item in parameter_warnings)
@@ -456,6 +482,7 @@ class DashboardState:
                     parsed.get("metadata", {}), list(data), data,
                     filename=path.name,
                     filename_patterns=config._data.get("filename_patterns"),
+                    lch_regex=config.lch_regex,
                 )
                 classification_name = str(getattr(classified.get("type"), "name", classified.get("type", "unknown"))).lower()
                 if classification_name == "unknown":
@@ -478,6 +505,14 @@ class DashboardState:
                 "classification": classification_name,
                 "oxide_thickness_nm": resolved["oxide_thickness_nm"],
                 "oxide_source": sources.get("oxide_thickness_nm", "missing"),
+                "is_tlm": facts.is_tlm,
+                "tlm_id": facts.tlm_id,
+                "channel_length_um": values.get("channel_length_um"),
+                "channel_length_source": sources.get("channel_length_um", "missing"),
+                "channel_width_um": values.get("channel_width_um"),
+                "channel_width_source": sources.get("channel_width_um", "missing"),
+                "gate_length_um": values.get("gate_length_um"),
+                "gate_length_source": sources.get("gate_length_um", "missing"),
                 "requested_field_mv_cm": resolved["overdrive_field_mv_cm"],
                 "requested_overdrive_v": resolved["overdrive_input_v"],
                 "resolved_overdrive_v": resolved["overdrive_v"],
@@ -555,14 +590,12 @@ class DashboardState:
                 "writable": writable, "path_length": len(os.path.abspath(path)),
                 "warning": warning,
             })
-        try:
-            worker = resolve_worker_command()
-            worker_error = None
-        except Exception as exc:
-            worker, worker_error = [], str(exc)
+        worker_probe = probe_worker()
         return {
             "versions": version_payload(), "checks": checks,
-            "worker_command": worker, "worker_error": worker_error,
+            "worker_command": worker_probe.get("command", []),
+            "worker_error": worker_probe.get("error"),
+            "worker_probe": worker_probe,
             "status": self.summary(),
         }
 
@@ -774,11 +807,12 @@ class DashboardState:
                 process = self.process
                 self.starting = False
         except Exception as exc:
+            message = worker_launch_error(exc, command) if isinstance(exc, OSError) and 'command' in locals() else str(exc)
             with self.lock:
                 self.starting = False
-                self.progress_label = "Run blocked during preflight"
-                self.log.append(str(exc))
-            raise
+                self.progress_label = "Run blocked while starting analysis"
+                self.log.append(message)
+            raise RuntimeError(message) from exc
 
         def consume() -> None:
             assert process.stdout is not None

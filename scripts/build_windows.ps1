@@ -7,7 +7,7 @@ if (-not (Test-Path -LiteralPath $Python)) {
     & $PythonCommand -m venv $Venv
     if ($LASTEXITCODE -ne 0) { throw "Python environment creation failed" }
 }
-& $Python -c "import sys; assert (3,11) <= sys.version_info[:2] < (3,14), 'Python 3.11-3.13 required'"
+& $Python -c "import sys; assert sys.version_info[:2] == (3,13), 'Portable release builds require Python 3.13'"
 if ($LASTEXITCODE -ne 0) { throw "Unsupported build Python" }
 & $Python -m pip install -c "$ProjectRoot\requirements.lock" "$ProjectRoot[build,native]"
 if ($LASTEXITCODE -ne 0) { throw "Build dependency installation failed" }

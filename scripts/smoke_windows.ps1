@@ -13,7 +13,7 @@ foreach ($Executable in @($Native, $Browser, $Worker)) {
 }
 
 $SmokeParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')
-$SmokeRoot = [IO.Path]::GetFullPath((Join-Path $SmokeParent ("fet-analyzer-smoke-" + [guid]::NewGuid().ToString("N"))))
+$SmokeRoot = [IO.Path]::GetFullPath((Join-Path $SmokeParent ("fet analyzer smoke " + [guid]::NewGuid().ToString("N"))))
 if (-not $SmokeRoot.StartsWith($SmokeParent + '\', [StringComparison]::OrdinalIgnoreCase)) { throw "Unsafe smoke directory" }
 New-Item -ItemType Directory -Path $SmokeRoot | Out-Null
 $Csv = Join-Path $SmokeRoot "IdVg__Smoke_Detail_FET_Device__1.csv"
@@ -37,6 +37,8 @@ Set-Content -LiteralPath $Config -Encoding UTF8 -Value @(
 try {
     & $Worker --doctor --input $SmokeRoot --output (Join-Path $SmokeRoot "output") --config $Config
     if ($LASTEXITCODE -ne 0) { throw "Worker diagnostics failed" }
+    & $Native --worker --doctor --input $SmokeRoot --output (Join-Path $SmokeRoot "output") --config $Config
+    if ($LASTEXITCODE -ne 0) { throw "Primary internal-worker diagnostics failed" }
     & $Worker --input $SmokeRoot --output (Join-Path $SmokeRoot "output") --config $Config --dry-run
     if ($LASTEXITCODE -ne 0) { throw "Worker dry-run failed" }
 

@@ -24,8 +24,10 @@ should start without opening a browser, and `--port` to choose another port.
 
 In the portable Windows build, double-click `FET-Analyzer-v2.exe` for the
 native application window. Use `FET-Analyzer-Browser.exe` if WebView2 cannot
-initialize. Both hosts delegate analysis to the sibling
-`FET-Analyzer-Worker.exe`; keep all files in the portable directory together.
+initialize. Both hosts delegate analysis to the primary executable's internal
+worker mode. Keep the entire portable directory together because `_internal`
+contains the scientific runtime. `FET-Analyzer-Worker.exe` remains an optional
+batch-command convenience entry point.
 
 For a completed run that does not need the live server, open the generated
 `output/index.html`. It contains the run KPIs, device dashboard, TLM dashboard

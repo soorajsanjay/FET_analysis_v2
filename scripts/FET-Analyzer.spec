@@ -28,7 +28,7 @@ app_pyz = PYZ(app.pure)
 
 native = EXE(app_pyz, app.scripts, [], exclude_binaries=True, name="FET-Analyzer-v2",
              debug=False, bootloader_ignore_signals=False, strip=False, upx=True,
-             console=False, disable_windowed_traceback=False, version=version_file)
+             console=True, disable_windowed_traceback=False, version=version_file)
 browser = EXE(app_pyz, app.scripts, [], exclude_binaries=True, name="FET-Analyzer-Browser",
               debug=False, bootloader_ignore_signals=False, strip=False, upx=True,
               console=True, disable_windowed_traceback=False, version=version_file)

@@ -21,7 +21,11 @@ def analyze_transfer(
     """Analyze transfer data without filesystem, plotting, or report dependencies."""
     cfg = deep_merge(deepcopy(DEFAULT_CONFIG), config or {})
     parsed = {"metadata": metadata or {}, "columns": list(columns), "data": {key: list(value) for key, value in columns.items()}}
-    classification = classify_measurement(parsed["metadata"], parsed["columns"], parsed["data"], filename=source_file, filename_patterns=cfg.get("filename_patterns"))
+    classification = classify_measurement(
+        parsed["metadata"], parsed["columns"], parsed["data"], filename=source_file,
+        filename_patterns=cfg.get("filename_patterns"),
+        lch_regex=cfg.get("tlm", {}).get("lch_regex"),
+    )
     classification["source_filename"] = source_file
     segments = segment_sweeps(
         parsed, classification,

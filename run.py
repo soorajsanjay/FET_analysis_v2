@@ -15,12 +15,14 @@ def main() -> int:
     parser.add_argument("--mode", choices=["browser", "native", "batch", "doctor", "setup"], default="browser")
     parser.add_argument("--reinstall", action="store_true", help="Refresh the local environment after dependency changes")
     args, forwarded = parser.parse_known_args()
-    if not (3, 11) <= sys.version_info[:2] < (3, 14):
-        parser.error("Install Python 3.11, 3.12, or 3.13, or use the portable Windows package.")
-    environment = ROOT / ".venv"
+    if sys.version_info[:2] < (3, 10):
+        parser.error("Install Python 3.10 or newer, or use the portable Windows package.")
+    version_tag = f"py{sys.version_info.major}{sys.version_info.minor}"
+    environment = ROOT / f".venv-{version_tag}"
     python = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     if not python.is_file():
-        print("Creating the local Python environment...", flush=True)
+        print(f"Bootstrap interpreter: {sys.executable} (Python {sys.version.split()[0]})", flush=True)
+        print(f"Creating the local Python environment: {environment}", flush=True)
         subprocess.run([sys.executable, "-m", "venv", str(environment)], check=True)
     native = args.mode == "native"
     marker = environment / (".fet-ready-native" if native else ".fet-ready")
@@ -31,7 +33,8 @@ def main() -> int:
                         "-e", str(ROOT) + ("[native]" if native else "")], check=True)
         marker.write_text(fingerprint, encoding="ascii")
     if args.mode == "setup":
-        print(f"Ready: {python}")
+        subprocess.run([str(python), "-c",
+                        "import fet_analyzer,sys; print('Ready interpreter:',sys.executable); print('Python:',sys.version.split()[0]); print('FET Analyzer:',fet_analyzer.__version__); print('Package:',fet_analyzer.__file__)"], check=True)
         return 0
     module = {"browser": "fet_analyzer.dashboard", "native": "fet_analyzer.native",
               "batch": "fet_analyzer", "doctor": "fet_analyzer"}[args.mode]
@@ -39,6 +42,8 @@ def main() -> int:
     if args.mode == "doctor":
         command.append("--doctor")
     command.extend(forwarded)
+    subprocess.run([str(python), "-c",
+                    "import fet_analyzer,sys; print('Selected interpreter:',sys.executable); print('Python:',sys.version.split()[0]); print('Environment:',sys.prefix); print('FET Analyzer:',fet_analyzer.__version__); print('Package:',fet_analyzer.__file__)"], check=True)
     print("Starting FET Analyzer. Keep this console open while using the dashboard.", flush=True)
     return subprocess.call(command, cwd=ROOT)
 

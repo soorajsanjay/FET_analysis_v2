@@ -12,6 +12,7 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Any
 
+from fet_analyzer.filename_conventions import parse_filename_conventions
 from fet_analyzer.utils.logging import LOGGER
 
 
@@ -106,45 +107,12 @@ def parse_filename_groups(
     filename: str,
     patterns: dict[str, Any],
 ) -> dict[str, str]:
-    """Parse filename using the configured regex pattern(s).
-
-    Falls back to simple prefix-based detection if regex fails.
-    Returns dict of named groups (measurement_type, sample_label, etc.).
-    """
-    result: dict[str, str] = {}
-
-    if not patterns or not filename:
-        return result
-
-    # Get active pattern
-    active_key = patterns.get("active", "")
-    pattern_list = patterns.get("patterns", {})
-    pattern_cfg = pattern_list.get(active_key, {})
-    regex_str = pattern_cfg.get("regex", "")
-
-    if regex_str:
-        # Strip YAML block scalar noise
-        regex_str = regex_str.strip()
-        try:
-            m = re.search(regex_str, filename, re.VERBOSE | re.IGNORECASE)
-            if m:
-                result = {k: v for k, v in m.groupdict().items() if v is not None}
-        except re.error:
-            pass
-
-    # Fallback: simple prefix detection (handles both IdVg_ and Id-Vg_ styles)
-    if "measurement_type" not in result:
-        base = Path(filename).stem if isinstance(filename, str) else ""
-        # Normalize: strip Telegram UUID suffix
-        base = re.sub(r"---[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", "", base)
-
-        # Try underscore-based pattern
-        parts = base.split("_")
-        if parts:
-            first = parts[0].lower().replace("-", "_")
-            result["measurement_type"] = parts[0]
-
-    return result
+    """Compatibility wrapper around the shared filename-conventions parser."""
+    if not filename:
+        return {}
+    return parse_filename_conventions(
+        filename, configured_filename_patterns=patterns,
+    ).filename_info()
 
 
 def recover_filename_info_from_metadata(metadata: dict[str, Any]) -> dict[str, str]:
@@ -158,20 +126,12 @@ def recover_filename_info_from_metadata(metadata: dict[str, Any]) -> dict[str, s
     if measurement_type:
         result["measurement_type"] = measurement_type
     if device_id:
+        facts = parse_filename_conventions(device_id)
+        result.update(facts.filename_info())
         result["device_id"] = device_id
         result["device_name"] = device_id
-        sample = re.sub(
-            r"_TLM\d*_\d+(?:\.\d+)?\s*(?:um|µm|μm)$", "", device_id,
-            flags=re.IGNORECASE,
-        )
-        result["sample_label"] = sample or device_id
-        tlm = re.search(
-            r"(?:^|_)(TLM\d*)_(\d+(?:\.\d+)?)\s*(?:um|µm|μm)$",
-            device_id, re.IGNORECASE,
-        )
-        if tlm:
-            result["device_type"] = tlm.group(1)
-            result["channel_length_um"] = tlm.group(2)
+    if measurement_type:
+        result["measurement_type"] = measurement_type
     if count:
         result["measurement_count"] = count
     result["naming_source"] = "csv_header"
@@ -184,6 +144,7 @@ def classify_measurement(
     data: dict[str, list[float]],
     filename: str = "",
     filename_patterns: dict[str, Any] | None = None,
+    lch_regex: str | None = None,
 ) -> dict[str, Any]:
     """Classify a parsed dataset.
 
@@ -219,11 +180,17 @@ def classify_measurement(
     meas_type = ""
     filename_info: dict[str, str] = {}
 
-    if filename and filename_patterns:
-        filename_info = parse_filename_groups(filename, filename_patterns)
-        if not filename_info.get("sample_label"):
+    filename_facts = parse_filename_conventions(
+        filename, configured_filename_patterns=filename_patterns,
+        configured_lch_regex=lch_regex,
+    ) if filename else None
+    if filename:
+        filename_info = filename_facts.filename_info() if filename_facts else {}
+        if not (filename_facts and filename_facts.configured_groups.get("sample_label")):
             recovered = recover_filename_info_from_metadata(metadata)
-            if recovered:
+            if any(recovered.get(key) for key in ("measurement_type", "device_id", "sample_label")):
+                recovered.update({key: value for key, value in filename_info.items()
+                                  if key not in recovered or key in {"device_type", "tlm_id", "channel_length_um"}})
                 filename_info = recovered
         else:
             filename_info.setdefault("naming_source", "filename")
@@ -243,17 +210,18 @@ def classify_measurement(
     is_general_name = any(t in meas_type for t in (
         "iv", "i-v", "general",
     ))
-    is_tlm_name = "tlm" in meas_type
+    is_tlm_name = bool(filename_facts and filename_facts.is_tlm) or "tlm" in meas_type
     filename_stem = Path(filename).stem if filename else ""
     # LTLM is an explicit measurement contract: these files are ungated
     # longitudinal TLM IV sweeps even when an instrument export contains an
     # incidental gate column or misleading setup metadata.
-    is_explicit_ltlm = bool(re.match(r"^ltlm(?:_|-|$)", filename_stem, re.I))
+    is_explicit_ltlm = bool(filename_facts and filename_facts.is_ltlm)
 
     # A TLM-named transfer or output file should carry the is_tlm flag
     # for R_total extraction, even when primary type is TRANSFER/OUTPUT
-    result["is_tlm"] = is_tlm_name or (filename and "tlm" in filename.lower())
+    result["is_tlm"] = is_tlm_name
     result["is_explicit_ltlm"] = is_explicit_ltlm
+    result["filename_conventions"] = filename_facts.to_dict() if filename_facts else None
 
     # Store parsed filename info in result
     result["filename_info"] = filename_info

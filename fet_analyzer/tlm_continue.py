@@ -42,17 +42,31 @@ def collect_tlm_records(
             classification = classify_measurement(
                 parsed["metadata"], parsed["columns"], parsed["data"],
                 filename=path.name, filename_patterns=config.get("filename_patterns"),
+                lch_regex=config.get("tlm", {}).get("lch_regex"),
             )
             if not classification.get("is_tlm"):
                 continue
             role = str(classification.get("tlm_role") or "unknown")
             roles[role] += 1
-            inferred, inferred_sources = infer_geometry(path, parsed["metadata"])
+            inferred, inferred_sources = infer_geometry(
+                path, parsed["metadata"],
+                filename_patterns=config.get("filename_patterns"),
+                lch_regex=config.get("tlm", {}).get("lch_regex"),
+            )
             sample = classification.get("filename_info", {}).get("sample_label", "unknown")
             device, sources, warnings = resolve_device_parameters(
                 config.get("device_defaults", {}), parameter_rows, str(sample), path.name,
                 inferred=inferred, inferred_sources=inferred_sources,
             )
+            convention_errors = list((classification.get("filename_conventions") or {}).get("errors") or [])
+            unresolved_errors = [item for item in convention_errors if not str(
+                sources.get(str(item.get("parameter", "")), "")
+            ).startswith("device_parameters.txt:")]
+            errors.extend({"file": str(path), "error": item.get("message", str(item))}
+                          for item in unresolved_errors)
+            if device.get("channel_length_um") is None or sources.get("channel_length_um") == "template_default":
+                errors.append({"file": str(path), "error":
+                               "TLM channel length is unresolved; explicit filename, regex, metadata, or confirmed table evidence is required."})
             segments = segment_sweeps(
                 parsed, classification,
                 vds_tolerance_v=float(config.get("transfer", {}).get("vds_segmentation_tolerance_v", 1e-6)),
@@ -94,7 +108,8 @@ def collect_tlm_records(
             1 for record in records
             if record.get("device_params", {}).get(key) is not None
         )
-        for key in ("channel_width_um", "film_thickness_nm", "oxide_thickness_nm", "polarity")
+        for key in ("channel_length_um", "channel_width_um", "gate_length_um",
+                    "film_thickness_nm", "oxide_thickness_nm", "polarity")
     }
     return records, {
         "input_count": len(file_list), "tlm_input_count": len(records),

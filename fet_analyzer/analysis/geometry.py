@@ -1,8 +1,9 @@
 """Device-geometry inference with explicit source provenance."""
 from __future__ import annotations
-import re
 from pathlib import Path
 from typing import Any
+
+from fet_analyzer.filename_conventions import parse_filename_conventions
 
 
 def _flatten(mapping: dict[str, Any]) -> dict[str, Any]:
@@ -16,7 +17,11 @@ def _flatten(mapping: dict[str, Any]) -> dict[str, Any]:
     return flat
 
 
-def infer_geometry(filename: Path, metadata: dict[str, Any]) -> tuple[dict[str, float], dict[str, str]]:
+def infer_geometry(
+    filename: Path, metadata: dict[str, Any], *,
+    filename_patterns: dict[str, Any] | None = None,
+    lch_regex: str | None = None,
+) -> tuple[dict[str, float], dict[str, str]]:
     """Infer numeric parameters with filename precedence over metadata.
 
     The master device parameter table is applied later and remains the
@@ -24,19 +29,12 @@ def infer_geometry(filename: Path, metadata: dict[str, Any]) -> tuple[dict[str, 
     """
     values: dict[str, float] = {}
     sources: dict[str, str] = {}
-    stem = filename.stem
-    patterns = {
-        "channel_length_um": r"TLM\d*_(\d+(?:\.\d+)?)\s*(?:um|µm|μm)",
-        "channel_width_um": r"(?:^|_)(?:W|width)_?(\d+(?:\.\d+)?)\s*(?:um|µm|μm)",
-        "oxide_thickness_nm": r"(?:tox|oxide)_?(\d+(?:\.\d+)?)\s*nm",
-        "film_thickness_nm": r"(?:film|channel|semiconductor)[_-]?(?:thickness|t)?[_-]?(\d+(?:\.\d+)?)\s*nm",
-    }
-    for target, pattern in patterns.items():
-        if target in values:
-            continue
-        match = re.search(pattern, stem, re.IGNORECASE)
-        if match:
-            values[target], sources[target] = float(match.group(1)), "filename"
+    facts = parse_filename_conventions(
+        filename, configured_filename_patterns=filename_patterns,
+        configured_lch_regex=lch_regex,
+    )
+    values.update(facts.parameters)
+    sources.update(facts.parameter_sources)
     flat = _flatten(metadata)
     metadata_names = {
         "channel_length_um": ("channel_length_um", "length_um", "lch_um"),

@@ -119,6 +119,10 @@ def resolve_device_parameters(defaults: dict[str, Any], rows: list[dict[str, str
             if conflict in seen and seen[conflict] != value: raise ValueError(f"Conflicting equally specific rows for {filename}: {key} at line {line}")
             seen[conflict] = value
             is_template = row.get("parameter_set_name", "").upper() == "TEMPLATE_UNCONFIRMED"
+            # Auto-generated template rows are defaults, not confirmed evidence.
+            # Preserve explicit filename/metadata values until a user confirms a row.
+            if is_template and key in sources and sources[key] != "template_default":
+                continue
             values[key] = value
             sources[key] = "template_default" if is_template else f"device_parameters.txt:line_{line}"
     if values.get("temperature_k") is not None:

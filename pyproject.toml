@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fet-analyzer"
-version = "2.0.0"
+version = "2.0.1"
 description = "FET electrical-characterization analysis pipeline and dashboard"
 readme = "README.md"
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.10"
 authors = [{name = "Sooraj Sanjay", email = "sooraj.sanjay@gmail.com"}]
 dependencies = [
   "matplotlib>=3.8,<4",

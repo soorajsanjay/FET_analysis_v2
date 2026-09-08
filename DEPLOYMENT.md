@@ -21,7 +21,8 @@ DLLs or scripts. Do not change organisation policy to work around a block.
 
 ## Build, test, sign and archive
 
-Use an approved Windows x64 machine with Python 3.11–3.13. Python 3.11 is used by CI.
+Use an approved Windows x64 machine with Python 3.13 for the release build. CI also
+tests source operation on Python 3.10, 3.11, 3.13 and 3.14.
 From a PowerShell session permitted by your organisation:
 
 ```powershell
@@ -48,7 +49,8 @@ must determine trust requirements for all bundled binaries under its policy.
 A self-signed certificate is not automatically trusted on colleagues' PCs.
 
 Native-host logs are under `%LOCALAPPDATA%\FET Analyzer\logs`. The browser and native
-hosts launch `FET-Analyzer-Worker.exe`; moving only one EXE breaks that relationship.
+hosts launch `FET-Analyzer-v2.exe --worker`; the separate worker remains an optional
+batch entry point. Moving an EXE away from `_internal` still breaks the application.
 The browser smoke test exercises HTTP startup and a dashboard-triggered frozen
 analysis. `--help` tests are not proof that WebView2 renders on another computer;
 pilot the actual native window on the destination image.
@@ -70,7 +72,7 @@ Suggested IT handoff:
    binaries/scripts or establish the required allowlisting policy.
 2. Stage the **complete folder** with your organisation's install and uninstall
    scripts. Installation should copy into a versioned directory such as
-   `%ProgramFiles%\FET Analyzer\2.0.0` in system context, or an approved per-user
+   `%ProgramFiles%\FET Analyzer\2.0.1` in system context, or an approved per-user
    location in user context. Do not mix per-user paths with a SYSTEM install.
 3. Create Start Menu shortcuts to the native and browser executables with a valid
    working directory. Users select a writable measurement folder inside the app;
@@ -86,7 +88,7 @@ Suggested IT handoff:
 5. Configure Win32 app install/uninstall commands, x64 OS requirements, return codes
    and detection rules. Detect the executable **and version/build identity**, not
    just a folder. Choose versioned destinations/detection when replacing builds
-   because the product version remains 2.0.0 across source fixes.
+   so upgrades and rollback can distinguish version 2.0.1 from earlier builds.
 6. Deploy WebView2 Evergreen Runtime as an approved dependency for the native host,
    or provide the browser launcher. See Microsoft's
    [WebView2 distribution guidance](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution).
