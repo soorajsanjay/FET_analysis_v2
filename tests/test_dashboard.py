@@ -583,6 +583,8 @@ class DashboardAdapterTests(unittest.TestCase):
         self.assertIn(".notice:not([hidden]){display:block}", html)
         self.assertNotIn("margin-bottom:12px;display:none}.gallery", html)
         self.assertNotIn("presentation", (html + analytics).lower())
+        self.assertNotIn("sooraj.sanjay@gmail.com", html.lower())
+        self.assertNotIn("mailto:", html.lower())
         self.assertTrue((static / "plotly-3.7.0.min.js").stat().st_size > 1_000_000)
         self.assertTrue((static / "PLOTLY-LICENSE.txt").is_file())
 
