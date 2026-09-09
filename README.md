@@ -11,6 +11,7 @@ Designed and developed by **Sooraj Sanjay** — sooraj.sanjay@gmail.com.
 
 | What you want | Use |
 |---|---|
+| Run browser analysis from source | `python -m fet_analyzer.dashboard --root .` |
 | Windows, no Python installation | Extract the complete portable ZIP; open `FET-Analyzer-v2.exe` or `FET-Analyzer-Browser.exe` |
 | Run from this source repository | Install 64-bit Python 3.10 or newer, then double-click **`run.cmd`** |
 | Repeatable batch analysis or automation | `python -m fet_analyzer --input ... --output ... --config ...` |
